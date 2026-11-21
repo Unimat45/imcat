@@ -13,7 +13,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use image::{ImageReader, RgbaImage};
+use image::{DynamicImage, ImageDecoder, ImageReader, RgbaImage};
 
 use colour::Rgb;
 
@@ -83,10 +83,13 @@ fn main() -> ExitCode {
 }
 
 /// Decodes an image, detecting its format from the file contents rather than
-/// the extension.
+/// the extension, and rotates or flips it as its EXIF orientation says.
 fn load_image(path: &Path) -> image::ImageResult<RgbaImage> {
-    Ok(ImageReader::open(path)?
+    let mut decoder = ImageReader::open(path)?
         .with_guessed_format()?
-        .decode()?
-        .into_rgba8())
+        .into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut img = DynamicImage::from_decoder(decoder)?;
+    img.apply_orientation(orientation);
+    Ok(img.into_rgba8())
 }
