@@ -40,7 +40,7 @@ pub fn to_linear(rgb: Rgb) -> [f32; 3] {
     rgb.map(srgb_to_linear)
 }
 
-/// Parses `#rrggbb` (the `#` is optional).
+/// Parses `#rrggbb` (the `#` is optional). Used as a clap value parser.
 pub fn parse_hex(s: &str) -> Result<Rgb, String> {
     let s = s.trim();
     let hex = s.strip_prefix('#').unwrap_or(s);

@@ -7,48 +7,50 @@ mod render;
 mod resample;
 mod term;
 
-use std::env;
-use std::ffi::OsString;
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use clap::Parser;
 use image::{DynamicImage, ImageDecoder, ImageReader, RgbaImage};
 
 use colour::Rgb;
 
-fn main() -> ExitCode {
-    let files: Vec<OsString> = env::args_os().skip(1).collect();
-    if files.is_empty() || files[0] == "--help" || files[0] == "-h" {
-        eprintln!("Usage: imcat image [image2 .. imageN]");
-        eprintln!();
-        eprintln!("Environment:");
-        eprintln!("  IMCATBG=#rrggbb   terminal background colour, enables alpha blending");
-        eprintln!("  IMCAT_WIDTH=n     output width in columns (default: terminal width)");
-        return ExitCode::SUCCESS;
-    }
+// The help text's description comes from `description` in Cargo.toml.
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Args {
+    /// Images to display.
+    #[arg(required = true, value_name = "IMAGE")]
+    files: Vec<PathBuf>,
 
-    let background = match env::var("IMCATBG") {
-        Ok(s) => colour::parse_hex(&s).unwrap_or_else(|_| {
-            eprintln!("imcat: ignoring invalid IMCATBG value {s:?} (expected #rrggbb)");
-            [0, 0, 0]
-        }),
-        Err(_) => [0, 0, 0],
-    };
-    let background = colour::to_linear(background);
+    /// Output width in columns [default: terminal width].
+    #[arg(
+        short,
+        long,
+        env = "IMCAT_WIDTH",
+        value_name = "COLUMNS",
+        value_parser = clap::value_parser!(u32).range(1..)
+    )]
+    width: Option<u32>,
+
+    /// Terminal background colour; transparent areas are blended into it
+    /// [default: black].
+    #[arg(short, long, env = "IMCATBG", value_name = "#RRGGBB", value_parser = colour::parse_hex)]
+    bg: Option<Rgb>,
+}
+
+fn main() -> ExitCode {
+    let args = Args::parse();
 
     term::enable_ansi_escapes();
-    let max_width = env::var("IMCAT_WIDTH")
-        .ok()
-        .and_then(|s| s.trim().parse::<u32>().ok())
-        .filter(|&w| w > 0)
-        .unwrap_or_else(term::width);
+    let max_width = args.width.unwrap_or_else(term::width);
+    let background = colour::to_linear(args.bg.unwrap_or([0, 0, 0]));
 
     let mut out = BufWriter::new(io::stdout().lock());
     let mut all_loaded = true;
 
-    for file in &files {
-        let path = Path::new(file);
+    for path in &args.files {
         let img = match load_image(path) {
             Ok(img) => img,
             Err(e) => {
@@ -92,4 +94,15 @@ fn load_image(path: &Path) -> image::ImageResult<RgbaImage> {
     let mut img = DynamicImage::from_decoder(decoder)?;
     img.apply_orientation(orientation);
     Ok(img.into_rgba8())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        use clap::CommandFactory;
+        Args::command().debug_assert();
+    }
 }
