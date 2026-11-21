@@ -16,40 +16,59 @@
 imcat \- image concatenator for text terminals.
 .SH "SYNOPSIS"
 .HP \w'\fBimcat\fR\ 'u
-\fBimcat\fR [\fB\fI\-options\fR\fR] \fB\fIINFILE\fR\fR...
+\fBimcat\fR [\fB\-w\fR\ \fICOLUMNS\fR] [\fB\-b\fR\ \fI#RRGGBB\fR] \fIIMAGE\fR...
 .SH "DESCRIPTION"
 .PP
 \fBimcat\fR
-displays the specified images on a text terminal that supports colour.
+displays the specified images on a text terminal that supports 24-bit colour.
+Images wider than the terminal are scaled down by averaging every pixel;
+smaller images are shown at their native size.
+Photos are rotated according to their EXIF orientation.
 .SH "OPTIONS"
 .PP
-.PP
-\fB\--help\fR
+\fB\-w\fR, \fB\-\-width\fR \fICOLUMNS\fR
 .RS 4
-shows command line syntax.
+Maximum output width in columns. Defaults to the width of the terminal
+attached to standard output, standard error or standard input, in that order,
+or 80 columns when none is a terminal.
 .RE
 .PP
+\fB\-b\fR, \fB\-\-bg\fR \fI#RRGGBB\fR
+.RS 4
+Background colour of the terminal. Transparent areas of images are blended
+into this colour. Defaults to black.
+.RE
+.PP
+\fB\-h\fR, \fB\-\-help\fR
+.RS 4
+Shows command line syntax.
+.RE
+.PP
+\fB\-V\fR, \fB\-\-version\fR
+.RS 4
+Shows the version.
+.RE
 .SH "ENVIRONMENT"
 .PP
-\fBIMCATBG\fR
+\fBIMCAT_WIDTH\fR
+.RS 4
+Default for \fB\-\-width\fR.
+.RE
 .PP
-Background colour to use when displaying transparent images.
-Set this to the background colour of the terminal.
-For instance, when using a white terminal background, like so:
+\fBIMCATBG\fR
+.RS 4
+Default for \fB\-\-bg\fR. For instance, when using a white terminal background:
 .PP
 $ export IMCATBG="#ffffff"
 .br
 $ imcat kitten.png
+.RE
 .PP
-\fBIMCAT_WIDTH\fR
-.PP
-Output width in columns. By default imcat uses the width of the terminal
-attached to standard output, standard error or standard input, in that order,
-falling back to 80 columns when none is a terminal.
-.PP
+Options given on the command line override these variables.
 .SH "EXIT STATUS"
 .PP
-0 if every image was displayed, 1 if any image could not be loaded.
+0 if every image was displayed, 1 if any image could not be loaded,
+2 for invalid options.
 .SH "SEE ALSO"
 .PP
 Please visit github\&.com/stolk/imcat for more information
