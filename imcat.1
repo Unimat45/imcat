@@ -1,12 +1,12 @@
 '\" t
 .\"     Title: imcat
 .\"    Author: Bram Stolk <b.stolk@gmail.com>
-.\"      Date: 2019-03-04
+.\"      Date: 2026-11-21
 .\"    Manual: Imcat Executable Programs
 .\"    Source: imcat github
 .\"  Language: English
 .\"
-.TH "IMCAT" "1" "2019\-03\-04" "imcat github" "Imcat Executable Program"
+.TH "IMCAT" "1" "2026\-11\-21" "imcat github" "Imcat Executable Program"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .nh
@@ -41,9 +41,16 @@ $ export IMCATBG="#ffffff"
 .br
 $ imcat kitten.png
 .PP
-.SH "SEE ALSO"
+\fBIMCAT_WIDTH\fR
 .PP
-\fBstty\fR(1)
+Output width in columns. By default imcat uses the width of the terminal
+attached to standard output, standard error or standard input, in that order,
+falling back to 80 columns when none is a terminal.
+.PP
+.SH "EXIT STATUS"
+.PP
+0 if every image was displayed, 1 if any image could not be loaded.
+.SH "SEE ALSO"
 .PP
 Please visit github\&.com/stolk/imcat for more information
 .SH "AUTHOR"

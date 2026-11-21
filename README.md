@@ -17,7 +17,7 @@ And you want to see the contents of an image?
 
 imcat to the rescue!
 
-imcat is a 24-bit image viewer that uses ANSI terminal colours to display any image supported by STB.
+imcat is a 24-bit image viewer that uses ANSI terminal colours to display PNG, JPEG, GIF, BMP, TGA, HDR and PNM images.
 It automatically resizes to the width of your terminal, using proper sampling kernels.
 
 imcat also works on the latest version of Windows 10.
@@ -42,13 +42,27 @@ $ export IMCATBG="#dad9cc"
 
 * Correct for aspect ratio of terminal font.
 
+The output width follows your terminal. To override it (for instance when piping into a file), set `IMCAT_WIDTH`:
+
+```
+$ IMCAT_WIDTH=120 imcat file1 > preview.txt
+```
+
 ## Building
 
-### Unix
-On Linux, just use 'make' to build the imcat binary.
+imcat is written in Rust. With a [Rust toolchain](https://rustup.rs) installed, the same steps work on Linux, macOS and Windows:
 
-### Windows 10
-On Windows, you need clang.exe from Visual Studio 2017 to build the imcat.exe binary. It's actually quite hard to get that compiler working, so you may just as well grab the pre-built <A HREF="https://stolk.org/imcat/imcat.exe">imcat.exe</A> binary.
+```
+$ cargo install --path .      # builds and installs imcat into ~/.cargo/bin
+```
+
+or, to just build the binary:
+
+```
+$ cargo build --release       # produces target/release/imcat (imcat.exe on Windows)
+```
+
+The release binary is self-contained, so you can copy it to another machine with the same OS and architecture. A man page is provided in `imcat.1`.
 
 ## License
 
@@ -58,7 +72,7 @@ On Windows, you need clang.exe from Visual Studio 2017 to build the imcat.exe bi
 
 [Bram Stolk](http://stolk.org).
 
-[stb_image.h](http://nothings.org/stb_image.h) is by Sean Barrett et al.
+Image decoding is done by the [image](https://crates.io/crates/image) crate. The original C version used [stb_image.h](http://nothings.org/stb_image.h) by Sean Barrett et al.
 
 ## Acknowledgements
 
