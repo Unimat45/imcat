@@ -17,7 +17,7 @@ And you want to see the contents of an image?
 
 imcat to the rescue!
 
-imcat is a 24-bit image viewer that uses ANSI terminal colours to display PNG, JPEG, GIF, BMP, TGA, HDR and PNM images.
+imcat is a 24-bit image viewer that uses ANSI terminal colours to display PNG, JPEG, WebP, GIF, TIFF, BMP, ICO, TGA, QOI, HDR, PNM, DDS and farbfeld images.
 It automatically resizes to the width of your terminal, using proper sampling kernels.
 
 imcat also works on the latest version of Windows 10.
