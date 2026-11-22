@@ -1,0 +1,262 @@
+# Builds imcat for Linux, macOS and Windows and publishes a GitHub release
+# whenever a pull request is merged into master.
+#
+# The PR's labels pick the next version, counting up from the latest release:
+#
+#   enhancement          -> minor bump (2.1.0 -> 2.2.0)
+#   bug                  -> patch bump (2.1.0 -> 2.1.1)
+#   enhancement and bug  -> minor bump (it already includes the bug fix)
+#   neither              -> no release
+#
+# For a major bump, change `version` in Cargo.toml by hand in the PR: when
+# Cargo.toml is ahead of the latest release, its version is used as is. With
+# no release yet, the first one uses the version in Cargo.toml.
+#
+# Once every target builds and passes its tests, the workflow commits the new
+# version to Cargo.toml and Cargo.lock on master ("Release vX.Y.Z"), tags that
+# commit and publishes the release.
+#
+# Running the workflow by hand (Actions tab > Release > Run workflow) builds and
+# tests every target and keeps the archives as run artifacts, without
+# releasing anything.
+
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Releases happen one at a time, so two quick merges can't claim the same
+# version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Pick version
+    # Only run in the fork: if this file is ever merged into the original
+    # repository (stolk/imcat), the workflow does nothing there. Closed PRs
+    # that weren't merged are ignored too.
+    if: >-
+      github.repository == 'Unimat45/imcat' &&
+      (github.event_name == 'workflow_dispatch' || github.event.pull_request.merged)
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.version.outputs.build }}
+      release: ${{ steps.version.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The merged commit on master, and every tag to find the latest release.
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Work out the next version
+        id: version
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual run: building without releasing."
+            {
+              echo "build=true"
+              echo "release=false"
+              echo "version=dev-${GITHUB_SHA::7}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          has_label() { jq -e --arg l "$1" 'index($l) != null' <<< "$LABELS" > /dev/null; }
+          if has_label enhancement; then
+            bump=minor
+          elif has_label bug; then
+            bump=patch
+          else
+            echo "::notice::The PR has neither the 'bug' nor the 'enhancement' label, so nothing is released."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          crate_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          latest=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+
+          if [ -z "$latest" ]; then
+            next="$crate_version"
+            echo "No release yet: using the Cargo.toml version, $next."
+          else
+            IFS=. read -r major minor patch <<< "${latest#v}"
+            if [ "$bump" = minor ]; then
+              next="$major.$((minor + 1)).0"
+            else
+              next="$major.$minor.$((patch + 1))"
+            fi
+            echo "Latest release is $latest; $bump bump gives $next."
+            # A version raised by hand in Cargo.toml (e.g. a major bump) wins.
+            highest=$(printf '%s\n%s\n' "$next" "$crate_version" | sort -V | tail -n 1)
+            if [ "$highest" != "$next" ]; then
+              next="$highest"
+              echo "Cargo.toml is ahead, so using its version, $next."
+            fi
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$next" > /dev/null; then
+            echo "::error::Tag v$next already exists."
+            exit 1
+          fi
+
+          {
+            echo "build=true"
+            echo "release=true"
+            echo "version=$next"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # musl builds are fully static, so they run on any Linux distribution.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            test: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            test: true
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            test: true
+          # Cross-compiled on the Apple Silicon runner, so its tests can't run.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            test: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            test: true
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            test: true
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Builds with the new version so `imcat --version` reports it. The same
+      # change is committed to master by the release job.
+      - name: Set version
+        if: needs.prepare.outputs.release == 'true'
+        run: |
+          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          rm Cargo.toml.bak
+          cargo update --workspace
+
+      - name: Test
+        if: matrix.test
+        run: cargo test --release --locked --target ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        id: package
+        run: |
+          if [ "${{ needs.prepare.outputs.release }}" = "true" ]; then
+            name="imcat-v$VERSION-${{ matrix.target }}"
+          else
+            name="imcat-$VERSION-${{ matrix.target }}"
+          fi
+          mkdir "$name"
+          cp README.md imcat.1 "$name/"
+
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/imcat.exe" "$name/"
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            echo "archive=$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            cp "target/${{ matrix.target }}/release/imcat" "$name/"
+            tar -czf "$name.tar.gz" "$name"
+            echo "archive=$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Publish v${{ needs.prepare.outputs.version }}
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to push the version commit, create the tag and the release
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Commit the new version to master
+        id: commit
+        run: |
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          cargo update --workspace
+
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898114+github-actions[bot]@users.noreply.github.com"
+            git commit -am "Release v$VERSION"
+            if ! git push origin HEAD:refs/heads/master; then
+              echo "::error::master changed while this release was building, so the version commit can't be pushed. The next merged PR will release these changes."
+              exit 1
+            fi
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          # --repo is explicit so the release always goes to the repository
+          # this workflow runs in (the fork), never to the parent repository.
+          # The tag is created on the version commit.
+          gh release create "v$VERSION" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "imcat v$VERSION" \
+            --generate-notes
